@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+<meta charset="UTF-8">
+<title>Sincronização de Vogais - Prototipo Avançado</title>
+<style>
+  canvas {
+    border: 1px solid black;
+    background: #ddd;
+  }
+</style>
+</head>
+<body>
+
+<h2>Sincronização de Vogais</h2>
+
+<label>Escolha um arquivo de áudio:</label>
+<input type="file" id="audioFile" accept="audio/*"><br><br>
+
+<label>Modo de Imagem:</label>
+<select id="imageMode">
+  <option value="spritesheet">Sprite Sheet</option>
+  <option value="separadas">Imagens Separadas</option>
+</select><br><br>
+
+<label>Carregar imagens (sprite ou separadas):</label>
+<input type="file" id="imageFiles" multiple><br><br>
+
+<button id="startBtn">Começar</button>
+
+<canvas id="canvas" width="600" height="400"></canvas>
+
+<script>
+const audioFileInput = document.getElementById('audioFile');
+const imageModeSelect = document.getElementById('imageMode');
+const imageFilesInput = document.getElementById('imageFiles');
+const startBtn = document.getElementById('startBtn');
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+
+let audioCtx, source, analyser;
+let dataArray, bufferLength, audio;
+let images = {};
+let spriteSheet, spriteCols = 5, spriteRows = 1; // Ajuste conforme seu sprite
+let spriteWidth, spriteHeight;
+let mode = 'spritesheet';
+
+imageModeSelect.addEventListener('change', (e) => {
+  mode = e.target.value;
+});
+
+imageFilesInput.addEventListener('change', (e) => {
+  const files = e.target.files;
+  if (mode === 'spritesheet') {
+    const file = files[0];
+    if (file) {
+      spriteSheet = new Image();
+      spriteSheet.src = URL.createObjectURL(file);
+      spriteSheet.onload = () => {
+        spriteWidth = spriteSheet.width / spriteCols;
+        spriteHeight = spriteSheet.height / spriteRows;
+      };
+    }
+  } else if (mode === 'separadas') {
+    images = {}; // Reset
+    for (let file of files) {
+      const img = new Image();
+      img.src = URL.createObjectURL(file);
+      img.onload = () => {
+        const name = file.name.split('.')[0].toUpperCase();
+        images[name] = img;
+      };
+    }
+  }
+});
+
+audioFileInput.addEventListener('change', (e) => {
+  const file = e.target.files[0];
+  if (file) {
+    audio = new Audio(URL.createObjectURL(file));
+  }
+});
+
+startBtn.addEventListener('click', () => {
+  if (!audio) return alert("Escolha um arquivo de áudio!");
+
+  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  source = audioCtx.createMediaElementSource(audio);
+  analyser = audioCtx.createAnalyser();
+
+  source.connect(analyser);
+  analyser.connect(audioCtx.destination);
+
+  analyser.fftSize = 256;
+  bufferLength = analyser.frequencyBinCount;
+  dataArray = new Uint8Array(bufferLength);
+
+  audio.play();
+  draw();
+});
+
+function draw() {
+  requestAnimationFrame(draw);
+
+  analyser.getByteFrequencyData(dataArray);
+
+  // Calcular média das frequências (simulação de "volume")
+  let sum = 0;
+  for (let i = 0; i < bufferLength; i++) {
+    sum += dataArray[i];
+  }
+  const average = sum / bufferLength;
+
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  if (average > 50) {
+    const vowels = ['A', 'E', 'I', 'O', 'U'];
+    const vowel = vowels[Math.floor(Math.random() * vowels.length)];
+
+    if (mode === 'spritesheet' && spriteSheet) {
+      const index = vowels.indexOf(vowel);
+      const sx = index * spriteWidth;
+      const sy = 0;
+      ctx.drawImage(spriteSheet, sx, sy, spriteWidth, spriteHeight, canvas.width/2 - spriteWidth/2, canvas.height/2 - spriteHeight/2, spriteWidth, spriteHeight);
+    } else if (mode === 'separadas' && images[vowel]) {
+      const img = images[vowel];
+      ctx.drawImage(img, canvas.width/2 - img.width/2, canvas.height/2 - img.height/2);
+    } else {
+      // fallback se a imagem ainda não carregou
+      ctx.font = "200px Arial";
+      ctx.fillStyle = "black";
+      ctx.fillText(vowel, canvas.width / 2 - 50, canvas.height / 2 + 50);
+    }
+  } else {
+    ctx.font = "100px Arial";
+    ctx.fillStyle = "gray";
+    ctx.fillText("-", canvas.width / 2 - 25, canvas.height / 2 + 25);
+  }
+}
+</script>
+
+</body>
+</html>
