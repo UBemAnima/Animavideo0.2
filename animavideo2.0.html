@@ -2,19 +2,28 @@
 <html lang="pt-br">
 <head>
 <meta charset="UTF-8">
-<title>Sincronização de Vogais - Prototipo Avançado</title>
+<title>Editor de Sincronização de Vogais</title>
 <style>
   canvas {
     border: 1px solid black;
     background: #ddd;
   }
+  #editor {
+    margin-top: 20px;
+  }
+  .ponto {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 5px;
+  }
 </style>
 </head>
 <body>
 
-<h2>Sincronização de Vogais</h2>
+<h2>Editor de Sincronização de Vogais</h2>
 
-<label>Escolha um arquivo de áudio:</label>
+<!-- Configurações -->
+<label>Áudio:</label>
 <input type="file" id="audioFile" accept="audio/*"><br><br>
 
 <label>Modo de Imagem:</label>
@@ -23,27 +32,43 @@
   <option value="separadas">Imagens Separadas</option>
 </select><br><br>
 
-<label>Carregar imagens (sprite ou separadas):</label>
+<label>Imagens:</label>
 <input type="file" id="imageFiles" multiple><br><br>
 
 <button id="startBtn">Começar</button>
+<button id="previewBtn">Preview (sem áudio)</button>
+<button id="resetBtn">Renovar</button><br><br>
 
 <canvas id="canvas" width="600" height="400"></canvas>
+
+<!-- Editor de Pontuações -->
+<div id="editor">
+  <h3>Pontuações Manuais</h3>
+  <div id="pontos"></div>
+  <button id="addPontoBtn">Adicionar Ponto</button>
+</div>
 
 <script>
 const audioFileInput = document.getElementById('audioFile');
 const imageModeSelect = document.getElementById('imageMode');
 const imageFilesInput = document.getElementById('imageFiles');
 const startBtn = document.getElementById('startBtn');
+const previewBtn = document.getElementById('previewBtn');
+const resetBtn = document.getElementById('resetBtn');
 const canvas = document.getElementById('canvas');
 const ctx = canvas.getContext('2d');
 
-let audioCtx, source, analyser;
-let dataArray, bufferLength, audio;
+const pontosContainer = document.getElementById('pontos');
+const addPontoBtn = document.getElementById('addPontoBtn');
+
+let audio, audioCtx, source, analyser;
+let dataArray, bufferLength;
 let images = {};
-let spriteSheet, spriteCols = 5, spriteRows = 1; // Ajuste conforme seu sprite
+let spriteSheet, spriteCols = 5, spriteRows = 1;
 let spriteWidth, spriteHeight;
 let mode = 'spritesheet';
+let pontos = []; // lista de {tempo: número, vogal: string}
+let isPreview = false;
 
 imageModeSelect.addEventListener('change', (e) => {
   mode = e.target.value;
@@ -62,7 +87,7 @@ imageFilesInput.addEventListener('change', (e) => {
       };
     }
   } else if (mode === 'separadas') {
-    images = {}; // Reset
+    images = {};
     for (let file of files) {
       const img = new Image();
       img.src = URL.createObjectURL(file);
@@ -82,7 +107,7 @@ audioFileInput.addEventListener('change', (e) => {
 });
 
 startBtn.addEventListener('click', () => {
-  if (!audio) return alert("Escolha um arquivo de áudio!");
+  if (!audio) return alert("Escolha um áudio!");
 
   audioCtx = new (window.AudioContext || window.webkitAudioContext)();
   source = audioCtx.createMediaElementSource(audio);
@@ -96,40 +121,88 @@ startBtn.addEventListener('click', () => {
   dataArray = new Uint8Array(bufferLength);
 
   audio.play();
+  isPreview = false;
   draw();
 });
 
+previewBtn.addEventListener('click', () => {
+  if (pontos.length === 0) return alert("Sem pontuações definidas!");
+  audio = null;
+  isPreview = true;
+  previewStartTime = performance.now();
+  draw();
+});
+
+resetBtn.addEventListener('click', () => {
+  location.reload();
+});
+
+// Editor de Pontuações
+addPontoBtn.addEventListener('click', () => {
+  const div = document.createElement('div');
+  div.classList.add('ponto');
+  div.innerHTML = `
+    Tempo (s): <input type="number" step="0.1" class="tempo">
+    Vogal: <input type="text" maxlength="1" class="vogal">
+    <button class="remover">Remover</button>
+  `;
+  pontosContainer.appendChild(div);
+
+  div.querySelector('.remover').addEventListener('click', () => {
+    div.remove();
+  });
+});
+
+function updatePontos() {
+  pontos = [];
+  document.querySelectorAll('.ponto').forEach(div => {
+    const tempo = parseFloat(div.querySelector('.tempo').value);
+    const vogal = div.querySelector('.vogal').value.toUpperCase();
+    if (!isNaN(tempo) && vogal) {
+      pontos.push({tempo, vogal});
+    }
+  });
+}
+
 function draw() {
   requestAnimationFrame(draw);
-
-  analyser.getByteFrequencyData(dataArray);
-
-  // Calcular média das frequências (simulação de "volume")
-  let sum = 0;
-  for (let i = 0; i < bufferLength; i++) {
-    sum += dataArray[i];
-  }
-  const average = sum / bufferLength;
-
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-  if (average > 50) {
-    const vowels = ['A', 'E', 'I', 'O', 'U'];
-    const vowel = vowels[Math.floor(Math.random() * vowels.length)];
+  if (isPreview) {
+    const currentTime = (performance.now() - previewStartTime) / 1000;
+    updatePontos();
+    const ponto = pontos.find(p => Math.abs(p.tempo - currentTime) < 0.1);
+    desenharVogal(ponto ? ponto.vogal : '-');
+  } else if (audio && audioCtx) {
+    analyser.getByteFrequencyData(dataArray);
+    let sum = 0;
+    for (let i = 0; i < bufferLength; i++) sum += dataArray[i];
+    const average = sum / bufferLength;
+    let vogal = '-';
 
+    // Aqui você pode fazer a detecção real de vogais em vez de aleatório!
+    if (average > 50) {
+      const vowels = ['A', 'E', 'I', 'O', 'U'];
+      vogal = vowels[Math.floor(Math.random() * vowels.length)];
+    }
+
+    desenharVogal(vogal);
+  }
+}
+
+function desenharVogal(vogal) {
+  if (vogal && vogal !== '-') {
     if (mode === 'spritesheet' && spriteSheet) {
-      const index = vowels.indexOf(vowel);
+      const index = ['A','E','I','O','U'].indexOf(vogal);
       const sx = index * spriteWidth;
-      const sy = 0;
-      ctx.drawImage(spriteSheet, sx, sy, spriteWidth, spriteHeight, canvas.width/2 - spriteWidth/2, canvas.height/2 - spriteHeight/2, spriteWidth, spriteHeight);
-    } else if (mode === 'separadas' && images[vowel]) {
-      const img = images[vowel];
+      ctx.drawImage(spriteSheet, sx, 0, spriteWidth, spriteHeight, canvas.width/2 - spriteWidth/2, canvas.height/2 - spriteHeight/2, spriteWidth, spriteHeight);
+    } else if (mode === 'separadas' && images[vogal]) {
+      const img = images[vogal];
       ctx.drawImage(img, canvas.width/2 - img.width/2, canvas.height/2 - img.height/2);
     } else {
-      // fallback se a imagem ainda não carregou
       ctx.font = "200px Arial";
       ctx.fillStyle = "black";
-      ctx.fillText(vowel, canvas.width / 2 - 50, canvas.height / 2 + 50);
+      ctx.fillText(vogal, canvas.width/2 - 50, canvas.height/2 + 50);
     }
   } else {
     ctx.font = "100px Arial";
